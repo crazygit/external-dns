@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+## [v1.20.0-idn.6]
+
+### Changed
+
+- Update default ExternalDNS image repository to `ghcr.io/crazygit/external-dns` and app version to `0.20.0-idn.6`.
+
 ## [v1.20.0]
 
 ### Added
