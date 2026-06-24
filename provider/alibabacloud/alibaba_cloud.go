@@ -18,6 +18,7 @@ package alibabacloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -26,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	sdkerrors "github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/alidns"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/pvtz"
@@ -283,15 +285,37 @@ func (p *AlibabaCloudProvider) refreshStsToken(sleepTime time.Duration) {
 	}
 }
 
+// asSoftErrorIfRetryable wraps transient Alibaba Cloud API errors (throttling or
+// server-side failures) as provider.SoftError, so the controller logs and retries
+// on the next reconcile loop instead of calling log.Fatalf and exiting the process.
+// Permanent errors (auth, invalid parameters, etc.) are returned unchanged so they
+// still fail fast and surface clearly.
+func asSoftErrorIfRetryable(err error) error {
+	if err == nil {
+		return nil
+	}
+	var serverErr *sdkerrors.ServerError
+	if errors.As(err, &serverErr) {
+		code := serverErr.ErrorCode()
+		// Throttling.* covers all rate-limit codes; 5xx covers transient
+		// server-side failures.
+		if strings.HasPrefix(code, "Throttling") || serverErr.HttpStatus() >= 500 {
+			return provider.NewSoftError(err)
+		}
+	}
+	return err
+}
+
 // Records gets the current records.
 //
 // Returns the current records or an error if the operation failed.
 func (p *AlibabaCloudProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
 	if p.privateZone {
-		return p.privateZoneRecords()
-	} else {
-		return p.recordsForDNS()
+		records, err := p.privateZoneRecords()
+		return records, asSoftErrorIfRetryable(err)
 	}
+	records, err := p.recordsForDNS()
+	return records, asSoftErrorIfRetryable(err)
 }
 
 // ApplyChanges applies the given changes.
@@ -304,9 +328,9 @@ func (p *AlibabaCloudProvider) ApplyChanges(_ context.Context, changes *plan.Cha
 	}
 
 	if p.privateZone {
-		return p.applyChangesForPrivateZone(changes)
+		return asSoftErrorIfRetryable(p.applyChangesForPrivateZone(changes))
 	}
-	return p.applyChangesForDNS(changes)
+	return asSoftErrorIfRetryable(p.applyChangesForDNS(changes))
 }
 
 func (p *AlibabaCloudProvider) getDNSName(rr, domain string) string {

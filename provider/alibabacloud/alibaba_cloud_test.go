@@ -18,14 +18,18 @@ package alibabacloud
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
+	sdkerrors "github.com/aliyun/alibaba-cloud-sdk-go/sdk/errors"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/alidns"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/pvtz"
 	"github.com/stretchr/testify/assert"
 
 	"sigs.k8s.io/external-dns/endpoint"
 	"sigs.k8s.io/external-dns/plan"
+	"sigs.k8s.io/external-dns/provider"
 )
 
 type MockAlibabaCloudDNSAPI struct {
@@ -650,5 +654,40 @@ func TestAlibabaCloudProvider_GetDomainRecords_RRUnicodeToPunycode(t *testing.T)
 	if assert.Len(t, records, 1) {
 		assert.Equal(t, "xn--0zwm56d", records[0].RR)
 		assert.Equal(t, "xn--fsqu00a.com", records[0].DomainName)
+	}
+}
+
+// serverError builds an Alibaba Cloud SDK ServerError with the given HTTP status
+// and error code, as the SDK would return on an API failure.
+func serverError(httpStatus int, code string) error {
+	return sdkerrors.NewServerError(httpStatus, fmt.Sprintf(`{"Code":"%s","Message":"test"}`, code), "")
+}
+
+func TestAsSoftErrorIfRetryable(t *testing.T) {
+	plainErr := errors.New("boom")
+
+	tests := []struct {
+		name     string
+		err      error
+		wantSoft bool
+	}{
+		{"nil stays nil", nil, false},
+		{"throttling is soft", serverError(400, "Throttling"), true},
+		{"throttling sub-code is soft", serverError(400, "Throttling.User"), true},
+		{"server-side 5xx is soft", serverError(503, "ServiceUnavailable"), true},
+		{"permanent auth error is hard", serverError(404, "InvalidAccessKeyId.NotFound"), false},
+		{"wrapped throttling is soft", fmt.Errorf("getDomainRecords %q: %w", "example.com", serverError(400, "Throttling")), true},
+		{"non-SDK error is hard", plainErr, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := asSoftErrorIfRetryable(tt.err)
+			if tt.err == nil {
+				assert.NoError(t, got)
+				return
+			}
+			assert.Equal(t, tt.wantSoft, errors.Is(got, provider.SoftError))
+		})
 	}
 }
