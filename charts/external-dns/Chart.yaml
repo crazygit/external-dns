@@ -2,8 +2,8 @@ apiVersion: v2
 name: external-dns
 description: ExternalDNS synchronizes exposed Kubernetes Services and Ingresses with DNS providers.
 type: application
-version: 1.20.0-idn.6
-appVersion: 0.20.0-idn.6
+version: 1.20.0-idn.7
+appVersion: 0.20.0-idn.7
 keywords:
   - kubernetes
   - k8s

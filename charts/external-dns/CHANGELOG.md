@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+## [v1.20.0-idn.7]
+
+### Fixed
+
+- Retry transient Alibaba Cloud DNS API errors (`Throttling*` codes and HTTP 5xx) instead of exiting the process, and bump app version to `0.20.0-idn.7`.
+
 ## [v1.20.0-idn.6]
 
 ### Changed
